@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yosi Bingo — Admin</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+:root {
+  --bg: #030a30; --panel: #071454; --panel2: #0b1d6e; --border: rgba(255,208,20,0.15);
+  --teal: #ffd014; --gold: #ffd014; --red: #ff4757; --green: #00d68f; --text: #ffffff; --hint: #9fb0e8;
+  --b-col: #ffd014; --i-col: #4fc3ff; --n-col: #00d68f; --g-col: #ff5d73; --o-col: #c07bf2;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; }
+a { color: inherit; }
+
+/* LOGIN */
+#login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+.login-box { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: 100%; max-width: 340px; }
+.login-box h1 { font-size: 20px; margin-bottom: 4px; }
+.login-box p { color: var(--hint); font-size: 13px; margin-bottom: 20px; }
+.login-box input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font-size: 14px; margin-bottom: 12px; }
+.login-box button { width: 100%; padding: 12px; border: none; border-radius: 10px; background: var(--teal); color: #000; font-weight: 700; font-size: 14px; cursor: pointer; }
+.login-err { color: var(--red); font-size: 13px; margin-top: 8px; display: none; }
+
+/* SHELL */
+#app-shell { display: none; min-height: 100vh; }
+.sidebar { width: 220px; background: var(--panel); border-right: 1px solid var(--border); padding: 20px 0; flex: none; position: fixed; top: 0; bottom: 0; overflow-y: auto; }
+.sidebar h1 { font-size: 16px; padding: 0 20px 20px; color: var(--teal); }
+.nav-item { padding: 12px 20px; font-size: 14px; color: var(--hint); cursor: pointer; display: flex; align-items: center; gap: 10px; border-left: 3px solid transparent; }
+.nav-item.active { color: var(--text); background: var(--panel2); border-left-color: var(--teal); }
+.nav-item .badge { margin-left: auto; background: var(--red); color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 10px; display: none; }
+.main { margin-left: 220px; flex: 1; padding: 24px; max-width: 1100px; }
+.main h2 { font-size: 20px; margin-bottom: 16px; }
+.top-conn { position: fixed; top: 12px; right: 24px; font-size: 12px; color: var(--green); display: flex; align-items: center; gap: 6px; }
+
+.grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.stat-card .val { font-size: 24px; font-weight: 700; }
+.stat-card .label { font-size: 12px; color: var(--hint); margin-top: 4px; }
+.stat-card.gold .val { color: var(--gold); }
+.stat-card.green .val { color: var(--green); }
+.stat-card.red .val { color: var(--red); }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+.panel h3 { font-size: 15px; margin-bottom: 12px; color: var(--teal); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--hint); font-weight: 600; padding: 8px 6px; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
+td { padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.btn { padding: 6px 12px; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.btn-approve { background: var(--green); color: #000; }
+.btn-reject { background: var(--red); color: #fff; }
+.btn-ghost { background: var(--panel2); color: var(--text); }
+.btn-gold { background: var(--gold); color: #000; }
+.btn-sm { margin-right: 4px; margin-bottom: 4px; }
+input, select, textarea { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font-size: 13px; }
+.form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.form-row label { font-size: 12px; color: var(--hint); min-width: 140px; }
+.pill { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+.pill.running { background: rgba(0,214,143,0.15); color: var(--green); }
+.pill.waiting { background: rgba(245,166,35,0.15); color: var(--gold); }
+.pill.countdown { background: rgba(91,147,239,0.15); color: var(--g-col); }
+.pill.finished { background: rgba(122,173,188,0.15); color: var(--hint); }
+.search-box { margin-bottom: 12px; width: 100%; max-width: 320px; }
+.empty-note { color: var(--hint); font-size: 13px; padding: 20px; text-align: center; }
+.toast-admin { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: var(--panel2); padding: 10px 20px; border-radius: 20px; font-size: 13px; border: 1px solid var(--border); z-index: 300; transition: opacity 0.3s; }
+.toast-admin.hidden { opacity: 0; pointer-events: none; }
+.col-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>🎱 Yosi Bingo Admin</h1>
+    <p>Enter the admin password to manage the game.</p>
+    <input type="password" id="login-password" placeholder="Admin password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">Log in</button>
+    <div class="login-err" id="login-err">Wrong password. Try again.</div>
+  </div>
+</div>
+
+<!-- SHELL -->
+<div id="app-shell" style="display:flex;">
+  <div class="sidebar">
+    <h1>🎱 Yosi Bingo</h1>
+    <div class="nav-item active" data-tab="overview" onclick="showTab('overview')">📊 Overview</div>
+    <div class="nav-item" data-tab="online" onclick="showTab('online')">🟢 Online Users</div>
+    <div class="nav-item" data-tab="games" onclick="showTab('games')">🎮 Live Games</div>
+    <div class="nav-item" data-tab="history" onclick="showTab('history')">🕓 Game History</div>
+    <div class="nav-item" data-tab="deposits" onclick="showTab('deposits')">💰 Deposits <span class="badge" id="badge-deposits">0</span></div>
+    <div class="nav-item" data-tab="withdrawals" onclick="showTab('withdrawals')">⬆ Withdrawals <span class="badge" id="badge-withdrawals">0</span></div>
+    <div class="nav-item" data-tab="finance" onclick="showTab('finance')">💹 Finance Report</div>
+    <div class="nav-item" data-tab="players" onclick="showTab('players')">👥 Players</div>
+    <div class="nav-item" data-tab="commission" onclick="showTab('commission')">💵 Commission</div>
+    <div class="nav-item" data-tab="anticheat" onclick="showTab('anticheat')">🛡 Anti-cheat <span class="badge" id="badge-anticheat">0</span></div>
+    <div class="nav-item" data-tab="bots" onclick="showTab('bots')">🤖 Bots</div>
+    <div class="nav-item" data-tab="broadcast" onclick="showTab('broadcast')">📢 Broadcast</div>
+    <div class="nav-item" data-tab="audit" onclick="showTab('audit')">📝 Audit Log</div>
+    <div class="nav-item" data-tab="health" onclick="showTab('health')">🩺 System Health</div>
+    <div class="nav-item" data-tab="settings" onclick="showTab('settings')">⚙️ Settings</div>
+    <div class="nav-item" onclick="doLogout()">🚪 Log out</div>
+  </div>
+
+  <div class="main">
+    <div class="top-conn" id="top-conn">● live</div>
+
+    <!-- OVERVIEW -->
+    <div class="tab-panel" id="tab-overview">
+      <h2>Overview</h2>
+      <div class="grid-stats" id="overview-stats"></div>
+      <div class="panel">
+        <h3>Quick notes</h3>
+        <p style="font-size:13px;color:var(--hint);line-height:1.6;">
+          This dashboard controls the whole game: approve deposits/withdrawals, pause or force a draw on any live game,
+          adjust commission and bonus settings, ban suspicious accounts, and message every player at once.
+          Telegram notifications keep working alongside this — you don't have to choose one or the other.
+        </p>
+      </div>
+    </div>
+
+    <!-- ONLINE USERS -->
+    <div class="tab-panel" id="tab-online" style="display:none;">
+      <h2>Online Users</h2>
+      <div class="panel">
+        <p style="font-size:12px;color:var(--hint);margin-bottom:12px;">
+          Players who've been active in the last 90 seconds. Refreshes automatically while this tab is open.
+        </p>
+        <table>
+          <thead><tr><th>Name</th><th>ID</th><th>Last active</th></tr></thead>
+          <tbody id="online-tbody"></tbody>
+        </table>
+        <div class="empty-note" id="online-empty" style="display:none;">Nobody online right now.</div>
+      </div>
+    </div>
+
+    <!-- LIVE GAMES -->
+    <div class="tab-panel" id="tab-games" style="display:none;">
+      <h2>Live Games</h2>
+      <div class="panel">
+        <table>
+          <thead><tr><th>Game</th><th>Bet</th><th>Status</th><th>Players (real / bots)</th><th>Drawn</th><th>Created</th><th>Started</th><th>Actions</th></tr></thead>
+          <tbody id="games-tbody"></tbody>
+        </table>
+        <div class="empty-note" id="games-empty" style="display:none;">No active games right now.</div>
+      </div>
+    </div>
+
+    <!-- GAME HISTORY (separate from Live Games - browsable archive, never touches a game in progress) -->
+    <div class="tab-panel" id="tab-history" style="display:none;">
+      <h2>Game History</h2>
+      <div class="panel">
+        <div class="form-row">
+          <label>From</label><input type="date" id="hist-from">
+          <label>To</label><input type="date" id="hist-to">
+          <label>Bet</label><input type="number" id="hist-bet" placeholder="Any" style="width:80px">
+          <input type="text" id="hist-search" placeholder="Search game ID or winner name" style="width:220px">
+          <button class="btn btn-gold" onclick="loadGameHistory()">Filter</button>
+        </div>
+        <table>
+          <thead><tr><th>Game ID</th><th>Bet</th><th>Players (real/bot)</th><th>Pot</th><th>Commission</th><th>Winners</th><th>Started</th><th>Finished</th></tr></thead>
+          <tbody id="history-tbody"></tbody>
+        </table>
+        <div class="empty-note" id="history-empty" style="display:none;">No games found for this filter.</div>
+      </div>
+    </div>
+
+    <!-- DEPOSITS -->
+    <div class="tab-panel" id="tab-deposits" style="display:none;">
+      <h2>Deposit Requests <span id="deposits-total-badge" style="font-size:13px;color:var(--green);font-weight:400;"></span></h2>
+      <div class="panel">
+        <h3>Pending</h3>
+        <table>
+          <thead><tr><th>ID</th><th>Player</th><th>Amount</th><th>Method</th><th>Reference</th><th>Time</th><th>Action</th></tr></thead>
+          <tbody id="deposits-pending-tbody"></tbody>
+        </table>
+        <div class="empty-note" id="deposits-pending-empty" style="display:none;">No pending deposits.</div>
+      </div>
+      <div class="panel">
+        <h3>History</h3>
+        <table>
+          <thead><tr><th>ID</th><th>Player</th><th>Amount</th><th>Status</th><th>Time</th></tr></thead>
+          <tbody id="deposits-all-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- WITHDRAWALS -->
+    <div class="tab-panel" id="tab-withdrawals" style="display:none;">
+      <h2>Withdrawal Requests <span id="withdrawals-total-badge" style="font-size:13px;color:var(--red);font-weight:400;"></span></h2>
+      <div class="panel">
+        <h3>Pending</h3>
+        <table>
+          <thead><tr><th>ID</th><th>Player</th><th>Amount</th><th>Method</th><th>Account</th><th>Time</th><th>Action</th></tr></thead>
+          <tbody id="withdrawals-pending-tbody"></tbody>
+        </table>
+        <div class="empty-note" id="withdrawals-pending-empty" style="display:none;">No pending withdrawals.</div>
+      </div>
+      <div class="panel">
+        <h3>History</h3>
+        <table>
+          <thead><tr><th>ID</th><th>Player</th><th>Amount</th><th>Status</th><th>Time</th></tr></thead>
+          <tbody id="withdrawals-all-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- FINANCE REPORT -->
+    <div class="tab-panel" id="tab-finance" style="display:none;">
+      <h2>Finance Report</h2>
+      <div class="panel">
+        <div class="form-row">
+          <label>Period</label>
+          <select id="fin-period" onchange="loadFinanceReport()">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <label>Anchor date</label>
+          <input type="date" id="fin-date" onchange="loadFinanceReport()">
+          <button class="btn btn-gold" onclick="loadFinanceReport()">Refresh</button>
+        </div>
+        <div class="grid-stats" id="finance-stats"></div>
+      </div>
+      <div class="panel">
+        <h3>Deposit history (this period)</h3>
+        <table>
+          <thead><tr><th>ID</th><th>Player</th><th>Amount</th><th>Status</th><th>Time</th></tr></thead>
+          <tbody id="finance-dep-tbody"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h3>Withdrawal history (this period)</h3>
+        <table>
+          <thead><tr><th>ID</th><th>Player</th><th>Amount</th><th>Status</th><th>Time</th></tr></thead>
+          <tbody id="finance-wit-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PLAYERS -->
+    <div class="tab-panel" id="tab-players" style="display:none;">
+      <h2>Players</h2>
+      <input class="search-box" id="player-search" placeholder="Search by name or Telegram ID..." oninput="loadPlayers()">
+      <div class="panel">
+        <table>
+          <thead><tr><th>Name</th><th>ID</th><th>Balance</th><th>Bonus</th><th>Wins</th><th>Games</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="players-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- COMMISSION -->
+    <div class="tab-panel" id="tab-commission" style="display:none;">
+      <h2>Commission Report</h2>
+      <div class="panel">
+        <div class="form-row">
+          <label>From</label><input type="date" id="comm-from">
+          <label>To</label><input type="date" id="comm-to">
+          <button class="btn btn-gold" onclick="loadCommission()">Filter</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('comm-from').value='';document.getElementById('comm-to').value='';loadCommission();">Clear</button>
+        </div>
+      </div>
+      <div class="grid-stats" id="commission-stats"></div>
+      <div class="panel">
+        <h3 id="commission-table-title">Recent games</h3>
+        <table>
+          <thead><tr><th>Game</th><th>Bet</th><th>Players</th><th>Pot</th><th>Commission</th><th>Jackpot cut</th><th>Time</th></tr></thead>
+          <tbody id="commission-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ANTI-CHEAT -->
+    <div class="tab-panel" id="tab-anticheat" style="display:none;">
+      <h2>Anti-cheat Flags</h2>
+      <p style="font-size:13px;color:var(--hint);margin-bottom:12px;">
+        Flags when the same device or the same IP is shared by an unusual number of accounts. Review before banning —
+        families/offices sharing wifi can trigger IP flags innocently, but a shared device across accounts is a strong signal.
+      </p>
+      <div class="panel">
+        <table>
+          <thead><tr><th>Type</th><th>Detail</th><th>Accounts involved</th><th>Time</th><th>Action</th></tr></thead>
+          <tbody id="anticheat-tbody"></tbody>
+        </table>
+        <div class="empty-note" id="anticheat-empty" style="display:none;">No flags — looking clean.</div>
+      </div>
+    </div>
+
+    <!-- BOTS -->
+    <div class="tab-panel" id="tab-bots" style="display:none;">
+      <h2>Seat-filler Bots</h2>
+      <div class="panel">
+        <p style="font-size:13px;color:var(--hint);line-height:1.6;margin-bottom:12px;">
+          Bots help a lobby reach the minimum player count faster when real players are waiting.
+          They're always labeled "🤖" everywhere, they never cost a real player anything, and they can
+          <strong>never win or take a share of the prize pool</strong> — that stays 100% reserved for real players.
+          You control whether bots are on and how many join each lobby; there's no odds/probability dial because
+          that would mean the house deciding who wins, which we don't do.
+        </p>
+        <div class="form-row"><label><input type="checkbox" id="bots-enabled"> Enable seat-filler bots</label></div>
+        <div id="bots-per-lobby"></div>
+        <button class="btn btn-approve" onclick="saveBotSettings()">Save bot settings</button>
+      </div>
+
+      <div class="panel">
+        <h3>Bot Names</h3>
+        <p style="font-size:13px;color:var(--hint);margin-bottom:12px;">
+          Only the display name shown to players is editable here — one bot is randomly given one of these
+          names (plus the 🤖 label) each time it seat-fills a lobby. There is intentionally no control over
+          how often a bot "wins", because bots never win real money games (see above).
+        </p>
+        <div id="bot-names-list"></div>
+        <div class="form-row">
+          <input type="text" id="new-bot-name" placeholder="New bot name" style="width:200px">
+          <button class="btn btn-ghost btn-sm" onclick="addBotName()">+ Add name</button>
+        </div>
+        <button class="btn btn-approve" onclick="saveBotNames()">Save bot names</button>
+      </div>
+    </div>
+
+    <!-- BROADCAST -->
+    <div class="tab-panel" id="tab-broadcast" style="display:none;">
+      <h2>Broadcast Message</h2>
+      <div class="panel">
+        <p style="font-size:13px;color:var(--hint);margin-bottom:12px;">Sends a Telegram message to every player who has opened the bot at least once.</p>
+        <textarea id="broadcast-text" rows="4" style="width:100%;margin-bottom:12px;" placeholder="e.g. New 500 ETB jackpot round starting tonight at 8PM! 🎉"></textarea>
+        <button class="btn btn-gold" onclick="sendBroadcast()">Send to all players</button>
+      </div>
+    </div>
+
+    <!-- AUDIT LOG -->
+    <div class="tab-panel" id="tab-audit" style="display:none;">
+      <h2>Admin Audit Log</h2>
+      <p style="font-size:13px;color:var(--hint);margin-bottom:12px;">
+        Every admin action - approvals, rejections, balance adjustments, bans, settings changes - with who did it,
+        when, and from which IP. Use this to catch mistakes or misuse if you ever add more admins.
+      </p>
+      <div class="panel">
+        <table>
+          <thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Detail</th><th>IP</th></tr></thead>
+          <tbody id="audit-tbody"></tbody>
+        </table>
+        <div class="empty-note" id="audit-empty" style="display:none;">No admin actions logged yet.</div>
+      </div>
+    </div>
+
+    <!-- SYSTEM HEALTH -->
+    <div class="tab-panel" id="tab-health" style="display:none;">
+      <h2>System Health</h2>
+      <div class="grid-stats" id="health-stats"></div>
+      <div class="panel">
+        <p style="font-size:12px;color:var(--hint);">Refreshes automatically every 10 seconds while this tab is open.</p>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="tab-panel" id="tab-settings" style="display:none;">
+      <h2>Game Settings</h2>
+      <div class="panel">
+        <h3>Money &amp; commission</h3>
+        <div class="form-row"><label>Commission % (house cut of pot)</label><input type="number" id="s-commission" style="width:100px"></div>
+        <div class="form-row"><label>Jackpot % (feeds jackpot)</label><input type="number" id="s-jackpot" style="width:100px"></div>
+        <div class="form-row"><label>Signup bonus (ETB, one-time)</label><input type="number" id="s-bonus" style="width:100px"></div>
+        <div class="form-row"><label>Deposit number</label><input type="text" id="s-depnum" style="width:200px"></div>
+        <div class="form-row"><label>Deposit account name</label><input type="text" id="s-depname" style="width:200px"></div>
+      </div>
+      <div class="panel">
+        <h3>Game pace</h3>
+        <div class="form-row"><label>Min players to start</label><input type="number" id="s-minplayers" style="width:100px"></div>
+        <div class="form-row"><label>Countdown before start (sec)</label><input type="number" id="s-countdown" style="width:100px"></div>
+        <div class="form-row"><label>Draw interval (sec)</label><input type="number" id="s-drawinterval" style="width:100px"></div>
+      </div>
+      <div class="panel">
+        <h3>Winning patterns</h3>
+        <div class="form-row"><label><input type="checkbox" id="wp-row"> Horizontal line</label></div>
+        <div class="form-row"><label><input type="checkbox" id="wp-column"> Vertical line</label></div>
+        <div class="form-row"><label><input type="checkbox" id="wp-diagonal"> Diagonal</label></div>
+        <div class="form-row"><label><input type="checkbox" id="wp-corners"> Four corners</label></div>
+        <div class="form-row"><label><input type="checkbox" id="wp-blackout"> Full house / blackout</label></div>
+      </div>
+      <div class="panel">
+        <h3>Maintenance mode</h3>
+        <div class="form-row"><label><input type="checkbox" id="s-maintenance"> Enable maintenance mode</label></div>
+        <div class="form-row"><label>Message shown to players</label><input type="text" id="s-maint-msg" style="width:320px"></div>
+      </div>
+      <button class="btn btn-approve" onclick="saveSettings()">Save all settings</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-admin hidden" id="admin-toast"></div>
+
+<script>
+let ADMIN_TOKEN = localStorage.getItem('yosi_admin_token') || '';
+let socket = null;
+
+function toastAdmin(msg) {
+  const el = document.getElementById('admin-toast');
+  el.textContent = msg; el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 2800);
+}
+
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN}, opts.headers || {});
+  const res = await fetch(path, opts);
+  if (res.status === 401) { logoutToLogin(); throw new Error('Unauthorized'); }
+  return res.json();
+}
+
+async function doLogin() {
+  const password = document.getElementById('login-password').value;
+  const res = await fetch('/api/admin/login', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password})
+  }).then(r => r.json());
+  if (res.token) {
+    ADMIN_TOKEN = res.token;
+    localStorage.setItem('yosi_admin_token', ADMIN_TOKEN);
+    enterApp();
+  } else {
+    document.getElementById('login-err').style.display = 'block';
+  }
+}
+
+function doLogout() {
+  api('/api/admin/logout', {method: 'POST'}).catch(() => {});
+  logoutToLogin();
+}
+function logoutToLogin() {
+  localStorage.removeItem('yosi_admin_token');
+  ADMIN_TOKEN = '';
+  document.getElementById('app-shell').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+async function enterApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = 'flex';
+  connectSocket();
+  showTab('overview');
+  refreshBadges();
+  setInterval(refreshBadges, 15000);
+}
+
+function connectSocket() {
+  socket = io({transports: ['websocket', 'polling']});
+  socket.on('connect', () => { document.getElementById('top-conn').textContent = '● live'; socket.emit('join_admin_room', {token: ADMIN_TOKEN}); });
+  socket.on('disconnect', () => { document.getElementById('top-conn').textContent = '○ reconnecting'; });
+  socket.on('admin_alert', (p) => {
+    if (p.type === 'deposit') toastAdmin(`💰 New deposit request from ${p.req.name}`);
+    if (p.type === 'withdrawal') toastAdmin(`⬆ New withdrawal request from ${p.req.name}`);
+    refreshBadges();
+  });
+  socket.on('draw', () => { if (currentTab === 'games') loadGames(); });
+  socket.on('lobbies_changed', () => { if (currentTab === 'games') loadGames(); });
+}
+
+let currentTab = 'overview';
+function showTab(name) {
+  currentTab = name;
+  document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('tab-' + name).style.display = 'block';
+  const nav = document.querySelector(`.nav-item[data-tab="${name}"]`);
+  if (nav) nav.classList.add('active');
+  const loaders = {
+    overview: loadOverview, games: loadGames, deposits: loadDeposits, withdrawals: loadWithdrawals,
+    players: loadPlayers, commission: loadCommission, anticheat: loadAnticheat, settings: loadSettings,
+    bots: loadBots, online: loadOnlineUsers, history: loadGameHistory, finance: loadFinanceReport,
+    audit: loadAuditLog, health: loadSystemHealth,
+  };
+  if (loaders[name]) loaders[name]();
+}
+
+async function refreshBadges() {
+  try {
+    const s = await api('/api/admin/dashboard');
+    setBadge('deposits', s.pending_deposits);
+    setBadge('withdrawals', s.pending_withdrawals);
+    setBadge('anticheat', s.anticheat_flags);
+  } catch (e) {}
+}
+function setBadge(name, n) {
+  const el = document.getElementById('badge-' + name);
+  el.textContent = n; el.style.display = n > 0 ? 'inline-block' : 'none';
+}
+
+// ---------- OVERVIEW ----------
+async function loadOverview() {
+  const s = await api('/api/admin/dashboard');
+  const cards = [
+    ['Total players', s.total_players, ''],
+    ['Active today', s.active_today, 'green'],
+    ['Online now', s.online_now, 'green'],
+    ['Wallet balances (total)', s.total_wallet_balance + ' ETB', 'gold'],
+    ['Total deposited', s.total_deposited + ' ETB', 'green'],
+    ['Commission (all-time)', s.total_commission + ' ETB', 'gold'],
+    ["Commission (today)", s.today_commission + ' ETB', 'green'],
+    ['Games played', s.total_games_played, ''],
+    ['Pending deposits', s.pending_deposits, s.pending_deposits > 0 ? 'red' : ''],
+    ['Pending withdrawals', s.pending_withdrawals, s.pending_withdrawals > 0 ? 'red' : ''],
+    ['Anti-cheat flags', s.anticheat_flags, s.anticheat_flags > 0 ? 'red' : ''],
+    ['Banned players', s.banned_players, ''],
+  ];
+  const grid = document.getElementById('overview-stats');
+  grid.innerHTML = cards.map(([label, val, cls]) => `
+    <div class="stat-card ${cls}"><div class="val">${val}</div><div class="label">${label}</div></div>
+  `).join('');
+}
+
+// ---------- LIVE GAMES ----------
+async function loadGames() {
+  const games = await api('/api/admin/games');
+  const tbody = document.getElementById('games-tbody');
+  document.getElementById('games-empty').style.display = games.length ? 'none' : 'block';
+  tbody.innerHTML = games.map(g => `
+    <tr>
+      <td>${g.game_id}</td>
+      <td>${g.bet} ETB</td>
+      <td><span class="pill ${g.status}">${g.status}${g.paused ? ' (paused)' : ''}</span></td>
+      <td>${g.real_player_count} / ${g.bot_count} 🤖</td>
+      <td>${g.drawn_count}</td>
+      <td>${g.created_at}</td>
+      <td>${g.started_at}</td>
+      <td>
+        ${g.status === 'waiting' ? `<button class="btn btn-ghost btn-sm" onclick="addBotsToGame('${g.game_id}')">+ Add bots</button>` : ''}
+        ${g.status === 'running' && !g.paused ? `<button class="btn btn-ghost btn-sm" onclick="gameAction('${g.game_id}','pause')">Pause</button>` : ''}
+        ${g.status === 'running' && g.paused ? `<button class="btn btn-approve btn-sm" onclick="gameAction('${g.game_id}','resume')">Resume</button>` : ''}
+        ${g.status === 'running' ? `<button class="btn btn-gold btn-sm" onclick="gameAction('${g.game_id}','force_draw')">Force draw</button>` : ''}
+        <button class="btn btn-reject btn-sm" onclick="gameAction('${g.game_id}','end')">End now</button>
+      </td>
+    </tr>`).join('');
+}
+async function gameAction(gid, action) {
+  await api(`/api/admin/games/${gid}/${action}`, {method: 'POST'});
+  toastAdmin(`Action "${action}" applied to ${gid}`);
+  loadGames();
+}
+
+// ---------- DEPOSITS ----------
+async function loadDeposits() {
+  const d = await api('/api/admin/deposits');
+  const approvedTotal = d.all.filter(r => r.status === 'approved').reduce((s, r) => s + r.amount, 0);
+  document.getElementById('deposits-total-badge').textContent = `· Total approved: ${approvedTotal} ETB`;
+  document.getElementById('deposits-pending-empty').style.display = d.pending.length ? 'none' : 'block';
+  document.getElementById('deposits-pending-tbody').innerHTML = d.pending.map(r => `
+    <tr>
+      <td>${r.id}</td><td>${r.name} (${r.user_id})</td><td>${r.amount} ETB</td><td>${r.method}</td>
+      <td>${r.reference}</td><td>${r.time}</td>
+      <td><button class="btn btn-approve btn-sm" onclick="depositAction('${r.id}','approve')">Approve</button>
+          <button class="btn btn-reject btn-sm" onclick="depositAction('${r.id}','reject')">Reject</button></td>
+    </tr>`).join('');
+  document.getElementById('deposits-all-tbody').innerHTML = d.all.slice(0, 40).map(r => `
+    <tr><td>${r.id}</td><td>${r.name}</td><td>${r.amount} ETB</td>
+    <td><span class="pill ${r.status === 'approved' ? 'running' : r.status === 'rejected' ? 'finished' : 'waiting'}">${r.status}</span></td>
+    <td>${r.time}</td></tr>`).join('');
+}
+async function depositAction(id, action) {
+  await api(`/api/admin/${action}`, {method: 'POST', body: JSON.stringify({req_id: id})});
+  toastAdmin(`Deposit ${id} ${action}d`);
+  loadDeposits(); refreshBadges();
+}
+
+// ---------- WITHDRAWALS ----------
+async function loadWithdrawals() {
+  const d = await api('/api/admin/withdrawals');
+  const approvedTotal = d.all.filter(r => r.status === 'approved').reduce((s, r) => s + r.amount, 0);
+  document.getElementById('withdrawals-total-badge').textContent = `· Total approved: ${approvedTotal} ETB`;
+  document.getElementById('withdrawals-pending-empty').style.display = d.pending.length ? 'none' : 'block';
+  document.getElementById('withdrawals-pending-tbody').innerHTML = d.pending.map(r => `
+    <tr>
+      <td>${r.id}</td><td>${r.name} (${r.user_id})</td><td>${r.amount} ETB</td><td>${r.method}</td>
+      <td>${r.account}</td><td>${r.time}</td>
+      <td><button class="btn btn-approve btn-sm" onclick="withdrawAction('${r.id}','approve_withdrawal')">Sent / Approve</button>
+          <button class="btn btn-reject btn-sm" onclick="withdrawAction('${r.id}','reject_withdrawal')">Reject &amp; refund</button></td>
+    </tr>`).join('');
+  document.getElementById('withdrawals-all-tbody').innerHTML = d.all.slice(0, 40).map(r => `
+    <tr><td>${r.id}</td><td>${r.name}</td><td>${r.amount} ETB</td>
+    <td><span class="pill ${r.status === 'approved' ? 'running' : r.status === 'rejected' ? 'finished' : 'waiting'}">${r.status}</span></td>
+    <td>${r.time}</td></tr>`).join('');
+}
+async function withdrawAction(id, action) {
+  await api(`/api/admin/${action}`, {method: 'POST', body: JSON.stringify({req_id: id})});
+  toastAdmin(`Withdrawal ${id} updated`);
+  loadWithdrawals(); refreshBadges();
+}
+
+// ---------- PLAYERS ----------
+async function loadPlayers() {
+  const search = document.getElementById('player-search').value;
+  const players = await api(`/api/admin/players?search=${encodeURIComponent(search)}`);
+  document.getElementById('players-tbody').innerHTML = players.map(p => `
+    <tr>
+      <td>${p.name}</td><td>${p.user_id}</td><td>${p.balance} ETB</td><td>${p.bonus_balance || 0} ETB</td>
+      <td>${p.total_wins}</td><td>${p.games_played}</td>
+      <td>${p.banned ? '<span class="pill finished">banned</span>' : '<span class="pill running">active</span>'}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="viewPlayer('${p.user_id}')">View</button>
+        <button class="btn btn-ghost btn-sm" onclick="adjustBalance('${p.user_id}')">Adjust ETB</button>
+        ${p.banned
+          ? `<button class="btn btn-approve btn-sm" onclick="banAction('${p.user_id}','unban')">Unban</button>`
+          : `<button class="btn btn-reject btn-sm" onclick="banAction('${p.user_id}','ban')">Ban</button>`}
+      </td>
+    </tr>`).join('');
+}
+async function viewPlayer(uid, dateFrom, dateTo) {
+  const qs = new URLSearchParams();
+  if (dateFrom) qs.set('date_from', dateFrom);
+  if (dateTo) qs.set('date_to', dateTo);
+  const p = await api(`/api/admin/player/${uid}` + (qs.toString() ? '?' + qs.toString() : ''));
+  if (p.error) { toastAdmin(p.error); return; }
+  const txRows = (p.transactions || []).map(t => `
+    <tr><td>${t.time}</td><td style="color:${t.type==='credit'?'#00d68f':'#ff4757'}">${t.type==='credit'?'+':'-'}${t.amount} ETB</td><td>${t.note}</td></tr>`).join('')
+    || '<tr><td colspan="3">No transactions in this range</td></tr>';
+  const winRows = (p.wins || []).map(w => `
+    <tr><td>${w.time}</td><td>+${w.amount} ETB</td><td>${w.bet} ETB game — ${w.pattern || 'Bingo'}${w.card_number ? ' (Card #' + w.card_number + ')' : ''}</td></tr>`).join('')
+    || '<tr><td colspan="3">No wins in this range</td></tr>';
+  let win = _playerDetailWindow;
+  if (!win || win.closed) {
+    win = window.open('', 'playerDetail', 'width=600,height=700');
+    _playerDetailWindow = win;
+  }
+  win.document.write(`
+    <html><head><title>${p.name} (${p.user_id})</title>
+    <style>
+      body{font-family:sans-serif;background:#0b1220;color:#fff;padding:16px;}
+      h2{margin-bottom:4px;} h3{margin:16px 0 8px;color:#ffd014;}
+      table{width:100%;border-collapse:collapse;font-size:13px;}
+      td,th{padding:6px 4px;border-bottom:1px solid #223;text-align:left;}
+      .stat{display:inline-block;margin-right:16px;font-size:13px;color:#9fb0e8;margin-bottom:6px;}
+      .stat b{color:#fff;}
+      input{padding:6px 8px;border-radius:6px;border:1px solid #223;background:#111c44;color:#fff;}
+      button{padding:6px 12px;border:none;border-radius:6px;background:#ffd014;color:#000;font-weight:700;cursor:pointer;}
+    </style></head><body>
+    <h2>${p.name}</h2>
+    <div class="stat">ID: <b>${p.user_id}</b></div>
+    <div class="stat">Joined: <b>${p.created_at || '-'}</b></div>
+    <div class="stat">Balance: <b>${p.balance} ETB</b></div>
+    <div class="stat">Bonus: <b>${p.bonus_balance} ETB</b></div>
+    <div class="stat">Games played: <b>${p.games_played}</b></div>
+    <div class="stat">Status: <b>${p.banned ? 'Banned' : 'Active'}</b></div>
+    <hr style="border-color:#223;margin:10px 0;">
+    <h3>Filter by date${p.date_from || p.date_to ? ` (showing ${p.date_from || '...'} to ${p.date_to || '...'})` : ' (showing all-time)'}</h3>
+    <div class="stat">From <input type="date" id="pv-from" value="${p.date_from || ''}"></div>
+    <div class="stat">To <input type="date" id="pv-to" value="${p.date_to || ''}"></div>
+    <button onclick="window.opener.viewPlayer('${p.user_id}', document.getElementById('pv-from').value, document.getElementById('pv-to').value)">Filter</button>
+    <button onclick="window.opener.viewPlayer('${p.user_id}')">Clear</button>
+    <h3>Totals (for the selected range)</h3>
+    <div class="stat">Total deposits: <b style="color:#00d68f">${p.total_deposits} ETB</b> (${p.deposit_count})</div>
+    <div class="stat">Total withdrawals: <b style="color:#ff4757">${p.total_withdrawals} ETB</b> (${p.withdrawal_count})</div>
+    <div class="stat">Total wins (lifetime): <b>${p.total_wins}</b></div>
+    <div class="stat">Total winnings (lifetime): <b>${p.total_winnings} ETB</b></div>
+    <h3>Transaction History</h3>
+    <table><thead><tr><th>Time</th><th>Amount</th><th>Note</th></tr></thead><tbody>${txRows}</tbody></table>
+    <h3>Win History</h3>
+    <table><thead><tr><th>Time</th><th>Amount</th><th>Detail</th></tr></thead><tbody>${winRows}</tbody></table>
+    </body></html>`);
+}
+let _playerDetailWindow = null;
+async function banAction(uid, action) {
+  await api(`/api/admin/player/${uid}/${action}`, {method: 'POST', body: JSON.stringify({})});
+  toastAdmin(`Player ${uid} ${action}ned`);
+  loadPlayers();
+}
+async function adjustBalance(uid) {
+  const amount = prompt('Amount to add (use a negative number to remove), in ETB:');
+  if (amount === null || amount === '') return;
+  const note = prompt('Reason (shown to the player):', 'Admin adjustment') || 'Admin adjustment';
+  await api(`/api/admin/player/${uid}/adjust`, {method: 'POST', body: JSON.stringify({amount: parseInt(amount), note})});
+  toastAdmin(`Balance adjusted for ${uid}`);
+  loadPlayers();
+}
+
+// ---------- COMMISSION ----------
+async function loadCommission() {
+  const from = document.getElementById('comm-from').value;
+  const to = document.getElementById('comm-to').value;
+  const qs = (from || to) ? `?date_from=${from || ''}&date_to=${to || ''}` : '';
+  const c = await api('/api/admin/commission' + qs);
+  const filtered = !!(from || to);
+  document.getElementById('commission-stats').innerHTML = filtered ? `
+    <div class="stat-card gold"><div class="val">${c.range_commission} ETB</div><div class="label">Commission earned (${from || '...'} to ${to || '...'})</div></div>
+    <div class="stat-card"><div class="val">${c.range_games}</div><div class="label">Games in range</div></div>
+    <div class="stat-card"><div class="val">${c.total_commission} ETB</div><div class="label">All-time commission</div></div>
+  ` : `
+    <div class="stat-card gold"><div class="val">${c.total_commission} ETB</div><div class="label">Total commission earned</div></div>
+    <div class="stat-card green"><div class="val">${c.today_commission} ETB</div><div class="label">Commission earned today</div></div>
+    <div class="stat-card"><div class="val">${c.total_games}</div><div class="label">Total games completed</div></div>
+  `;
+  document.getElementById('commission-table-title').textContent = filtered ? 'Games in selected range' : 'Recent games';
+  const rows = filtered ? c.range_rows : c.recent;
+  document.getElementById('commission-tbody').innerHTML = rows.map(r => `
+    <tr><td>${r.game_id}</td><td>${r.bet} ETB</td><td>${r.players}</td><td>${r.total_pot} ETB</td>
+    <td>${r.commission} ETB</td><td>${r.jackpot_cut} ETB</td><td>${r.time}</td></tr>`).join('');
+}
+
+// ---------- ONLINE USERS ----------
+let onlineInterval = null;
+async function loadOnlineUsers() {
+  const users = await api('/api/admin/online_users');
+  document.getElementById('online-empty').style.display = users.length ? 'none' : 'block';
+  document.getElementById('online-tbody').innerHTML = users.map(u => `
+    <tr><td>${u.name}</td><td>${u.user_id}</td><td>${u.seconds_ago}s ago</td></tr>`).join('');
+  clearInterval(onlineInterval);
+  onlineInterval = setInterval(() => { if (currentTab === 'online') loadOnlineUsers(); }, 10000);
+}
+
+// ---------- GAME HISTORY (separate from Live Games) ----------
+async function loadGameHistory() {
+  const params = new URLSearchParams();
+  const from = document.getElementById('hist-from').value;
+  const to = document.getElementById('hist-to').value;
+  const bet = document.getElementById('hist-bet').value;
+  const search = document.getElementById('hist-search').value;
+  if (from) params.set('date_from', from);
+  if (to) params.set('date_to', to);
+  if (bet) params.set('bet', bet);
+  if (search) params.set('search', search);
+  const games = await api('/api/admin/game_history?' + params.toString());
+  document.getElementById('history-empty').style.display = games.length ? 'none' : 'block';
+  document.getElementById('history-tbody').innerHTML = games.map(g => {
+    const winnersTxt = (g.winners && g.winners.length)
+      ? g.winners.map(w => `${w.name} (Card #${w.card_number}, ${w.prize} ETB${w.jackpot ? ' incl. ' + w.jackpot + ' ETB jackpot' : ''}, ${w.pattern})`).join('; ')
+      : 'No winner';
+    return `<tr>
+      <td>${g.game_id}</td><td>${g.bet} ETB</td><td>${g.real_player_count} / ${g.bot_count}</td>
+      <td>${g.total_pot} ETB</td><td>${g.commission} ETB</td><td>${winnersTxt}</td>
+      <td>${g.started_at}</td><td>${g.finished_at}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ---------- FINANCE REPORT ----------
+async function loadFinanceReport() {
+  const period = document.getElementById('fin-period').value;
+  const date = document.getElementById('fin-date').value;
+  const qs = new URLSearchParams({period, ...(date ? {date} : {})});
+  const r = await api('/api/admin/finance_report?' + qs.toString());
+  document.getElementById('finance-stats').innerHTML = `
+    <div class="stat-card"><div class="val">${r.date_from}${r.date_from !== r.date_to ? ' → ' + r.date_to : ''}</div><div class="label">Period</div></div>
+    <div class="stat-card green"><div class="val">${r.deposits_total} ETB</div><div class="label">Deposits</div></div>
+    <div class="stat-card red"><div class="val">${r.withdrawals_total} ETB</div><div class="label">Withdrawals</div></div>
+    <div class="stat-card gold"><div class="val">${r.house_profit} ETB</div><div class="label">House profit (commission)</div></div>
+    <div class="stat-card"><div class="val">${r.net_cashflow} ETB</div><div class="label">Net cashflow (dep - wit)</div></div>
+    <div class="stat-card"><div class="val">${r.games_count}</div><div class="label">Games played</div></div>
+  `;
+  document.getElementById('finance-dep-tbody').innerHTML = r.deposit_history.map(d => `
+    <tr><td>${d.id}</td><td>${d.name}</td><td>${d.amount} ETB</td>
+    <td><span class="pill ${d.status === 'approved' ? 'running' : d.status === 'rejected' ? 'finished' : 'waiting'}">${d.status}</span></td>
+    <td>${d.time}</td></tr>`).join('') || '<tr><td colspan="5">No deposits in this period.</td></tr>';
+  document.getElementById('finance-wit-tbody').innerHTML = r.withdrawal_history.map(w => `
+    <tr><td>${w.id}</td><td>${w.name}</td><td>${w.amount} ETB</td>
+    <td><span class="pill ${w.status === 'approved' ? 'running' : w.status === 'rejected' ? 'finished' : 'waiting'}">${w.status}</span></td>
+    <td>${w.time}</td></tr>`).join('') || '<tr><td colspan="5">No withdrawals in this period.</td></tr>';
+}
+
+// ---------- AUDIT LOG ----------
+async function loadAuditLog() {
+  const rows = await api('/api/admin/audit_log');
+  document.getElementById('audit-empty').style.display = rows.length ? 'none' : 'block';
+  document.getElementById('audit-tbody').innerHTML = rows.map(r => `
+    <tr><td>${r.time}</td><td>${r.admin}</td><td>${r.action}</td><td>${r.detail}</td><td>${r.ip}</td></tr>`).join('');
+}
+
+// ---------- SYSTEM HEALTH ----------
+let healthInterval = null;
+async function loadSystemHealth() {
+  const h = await api('/api/admin/system_health');
+  document.getElementById('health-stats').innerHTML = `
+    <div class="stat-card"><div class="val">${h.uptime_human}</div><div class="label">Uptime</div></div>
+    <div class="stat-card ${h.cpu_percent > 80 ? 'red' : ''}"><div class="val">${h.cpu_percent != null ? h.cpu_percent + '%' : 'n/a'}</div><div class="label">CPU usage</div></div>
+    <div class="stat-card ${h.ram_percent > 80 ? 'red' : ''}"><div class="val">${h.ram_percent != null ? h.ram_percent + '%' : 'n/a'}</div><div class="label">RAM usage${h.ram_used_mb != null ? ` (${h.ram_used_mb}/${h.ram_total_mb} MB)` : ''}</div></div>
+    <div class="stat-card ${h.database_status === 'online' ? 'green' : 'red'}"><div class="val">${h.database_status}</div><div class="label">Database (${h.database_backend})</div></div>
+    <div class="stat-card ${h.telegram_status === 'online' ? 'green' : 'red'}"><div class="val">${h.telegram_status}</div><div class="label">Telegram API</div></div>
+  `;
+  clearInterval(healthInterval);
+  healthInterval = setInterval(() => { if (currentTab === 'health') loadSystemHealth(); }, 10000);
+}
+
+// ---------- ANTI-CHEAT ----------
+async function loadAnticheat() {
+  const flags = await api('/api/admin/anticheat');
+  document.getElementById('anticheat-empty').style.display = flags.length ? 'none' : 'block';
+  document.getElementById('anticheat-tbody').innerHTML = flags.map(f => `
+    <tr>
+      <td>${f.type === 'shared_device' ? '📱 Shared device' : '🌐 Shared IP'}</td>
+      <td>${f.device_id || f.ip}</td>
+      <td>${f.user_ids.join(', ')}</td>
+      <td>${f.time}</td>
+      <td>${f.user_ids.map(uid => `<button class="btn btn-reject btn-sm" onclick="banAction('${uid}','ban')">Ban ${uid}</button>`).join('')}</td>
+    </tr>`).join('');
+}
+
+// ---------- BOTS ----------
+let botNames = [];
+async function loadBots() {
+  const [bots, lobbies] = await Promise.all([api('/api/admin/bots'), api('/api/admin/lobby_configs')]);
+  document.getElementById('bots-enabled').checked = bots.enabled;
+  const wrap = document.getElementById('bots-per-lobby');
+  wrap.innerHTML = lobbies.map(l => `
+    <div class="form-row">
+      <label>${l.label} lobby</label>
+      <input type="number" min="0" max="20" style="width:80px" id="bot-count-${l.bet}" value="${bots.counts[String(l.bet)] || 0}">
+      <span style="font-size:12px;color:var(--hint);">bots will auto-join to help this lobby fill</span>
+    </div>`).join('');
+  botNames = bots.names || [];
+  renderBotNames();
+}
+function renderBotNames() {
+  document.getElementById('bot-names-list').innerHTML = botNames.map((n, i) => `
+    <div class="form-row">
+      <input type="text" value="${n}" onchange="botNames[${i}]=this.value">
+      <button class="btn btn-reject btn-sm" onclick="removeBotName(${i})">Remove</button>
+    </div>`).join('');
+}
+function addBotName() {
+  const input = document.getElementById('new-bot-name');
+  const val = input.value.trim();
+  if (!val) return;
+  botNames.push(val);
+  input.value = '';
+  renderBotNames();
+}
+function removeBotName(i) {
+  botNames.splice(i, 1);
+  renderBotNames();
+}
+async function saveBotNames() {
+  const res = await api('/api/admin/bot_names', {method: 'POST', body: JSON.stringify({names: botNames})});
+  botNames = res.names || [];
+  renderBotNames();
+  toastAdmin('Bot names saved.');
+}
+async function saveBotSettings() {
+  const lobbies = await api('/api/admin/lobby_configs');
+  const counts = {};
+  lobbies.forEach(l => { counts[l.bet] = parseInt(document.getElementById(`bot-count-${l.bet}`).value) || 0; });
+  await api('/api/admin/bots', {method: 'POST', body: JSON.stringify({enabled: document.getElementById('bots-enabled').checked, counts})});
+  toastAdmin('Bot settings saved.');
+}
+async function addBotsToGame(gid) {
+  const n = prompt('How many bots to add to this waiting lobby right now?', '2');
+  if (!n) return;
+  await api(`/api/admin/games/${gid}/add_bots`, {method: 'POST', body: JSON.stringify({count: parseInt(n)})});
+  toastAdmin('Bots added.');
+  loadGames();
+}
+
+// ---------- BROADCAST ----------
+async function sendBroadcast() {
+  const message = document.getElementById('broadcast-text').value.trim();
+  if (!message) { toastAdmin('Write a message first'); return; }
+  const res = await api('/api/admin/broadcast', {method: 'POST', body: JSON.stringify({message})});
+  toastAdmin(`Sent to ${res.sent || 0} players`);
+  document.getElementById('broadcast-text').value = '';
+}
+
+// ---------- SETTINGS ----------
+async function loadSettings() {
+  const s = await api('/api/admin/settings');
+  document.getElementById('s-commission').value = s.commission_percent;
+  document.getElementById('s-jackpot').value = s.jackpot_percent;
+  document.getElementById('s-bonus').value = s.signup_bonus;
+  document.getElementById('s-depnum').value = s.deposit_number;
+  document.getElementById('s-depname').value = s.deposit_name;
+  document.getElementById('s-minplayers').value = s.min_players;
+  document.getElementById('s-countdown').value = s.countdown_seconds;
+  document.getElementById('s-drawinterval').value = s.draw_interval_seconds;
+  document.getElementById('s-maintenance').checked = s.maintenance_mode;
+  document.getElementById('s-maint-msg').value = s.maintenance_message;
+  const patterns = new Set(s.win_patterns);
+  document.getElementById('wp-row').checked = patterns.has('row');
+  document.getElementById('wp-column').checked = patterns.has('column');
+  document.getElementById('wp-diagonal').checked = patterns.has('diagonal');
+  document.getElementById('wp-corners').checked = patterns.has('corners');
+  document.getElementById('wp-blackout').checked = patterns.has('blackout');
+}
+async function saveSettings() {
+  const win_patterns = [];
+  if (document.getElementById('wp-row').checked) win_patterns.push('row');
+  if (document.getElementById('wp-column').checked) win_patterns.push('column');
+  if (document.getElementById('wp-diagonal').checked) win_patterns.push('diagonal');
+  if (document.getElementById('wp-corners').checked) win_patterns.push('corners');
+  if (document.getElementById('wp-blackout').checked) win_patterns.push('blackout');
+  const patch = {
+    commission_percent: parseInt(document.getElementById('s-commission').value),
+    jackpot_percent: parseInt(document.getElementById('s-jackpot').value),
+    signup_bonus: parseInt(document.getElementById('s-bonus').value),
+    deposit_number: document.getElementById('s-depnum').value,
+    deposit_name: document.getElementById('s-depname').value,
+    min_players: parseInt(document.getElementById('s-minplayers').value),
+    countdown_seconds: parseInt(document.getElementById('s-countdown').value),
+    draw_interval_seconds: parseInt(document.getElementById('s-drawinterval').value),
+    maintenance_mode: document.getElementById('s-maintenance').checked,
+    maintenance_message: document.getElementById('s-maint-msg').value,
+    win_patterns,
+  };
+  await api('/api/admin/settings', {method: 'POST', body: JSON.stringify(patch)});
+  toastAdmin('Settings saved. New games will use these settings immediately.');
+}
+
+// Init
+if (ADMIN_TOKEN) { enterApp(); } 
+</script>
+</body>
+</html>
