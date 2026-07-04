@@ -1,3 +1,4 @@
+
 """
 Persistent data layer. Stores everything as ONE big dict, either in:
   - MongoDB Atlas (recommended - free forever, survives every Render
@@ -10,12 +11,12 @@ way - it only ever calls load() / save(d).
 """
 import json, os, time, threading, uuid, secrets, hashlib
 from datetime import datetime
-
+ 
 DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
 os.makedirs(DATA_DIR, exist_ok=True)
 DATA_FILE = os.path.join(DATA_DIR, "data.json")
 _lock = threading.RLock()
-
+ 
 # --- MongoDB Atlas backend (free forever, no card required - see README
 #     "Persistent storage" for the 5-minute setup). Set MONGODB_URI on
 #     Render and this kicks in automatically; nothing else to configure. ---
@@ -37,7 +38,7 @@ if MONGODB_URI:
     # failure - every load()/save() call tries Mongo fresh.
     try:
         import pymongo
-        _mongo_client = pymongo.MongoClient(MONGODB_URI, serverSelectionTimeoutMS=8000)
+        _mongo_client = pymongo.MongoClient(MONGODB_URI, serverSelectionTimeoutMS=4000, connectTimeoutMS=4000)
         try:
             _mongo_db = _mongo_client.get_default_database()
             if _mongo_db is None:
@@ -49,7 +50,7 @@ if MONGODB_URI:
         _mongo_last_error = str(e)
         print(f"[data.py] MongoDB client setup failed at startup, running on local file "
               f"until a request succeeds: {e}")
-
+ 
 LOBBY_CONFIGS = [
     {"bet": 10,  "label": "10 ETB",  "jackpot_target": 500, "bonus": False},
     {"bet": 20,  "label": "20 ETB",  "jackpot_target": 500, "bonus": True},
@@ -59,7 +60,7 @@ LOBBY_CONFIGS = [
     {"bet": 150, "label": "150 ETB", "jackpot_target": 500, "bonus": False},
     {"bet": 300, "label": "300 ETB", "jackpot_target": 500, "bonus": True},
 ]
-
+ 
 DEFAULT_SETTINGS = {
     "commission_percent": 20,     # house cut of the total pot per game (e.g. 20 -> 2 ETB out of every 10 ETB bet)
     "jackpot_percent": 5,         # separate slice that feeds the progressive jackpot
@@ -75,8 +76,8 @@ DEFAULT_SETTINGS = {
     "bots_enabled": True,   # master switch for lobby-filler bots (see bot_counts below)
     "big_win_threshold": 300,  # ETB - a single win at/above this fires a Telegram alert to admin
 }
-
-
+ 
+ 
 def _default():
     return {
         "players": {},
@@ -116,16 +117,16 @@ def _default():
         # settings change...) - who did it, when, from what IP.
         "admin_audit_log": [],
     }
-
-
+ 
+ 
 DEFAULT_BOT_NAMES = ["Abebe", "Kebede", "Selam", "Meron", "Yared", "Liya", "Dawit", "Hana",
                      "Nardos", "Bereket", "Sara", "Mekdes", "Yonas", "Ruth", "Solomon", "Tigist",
                      "Henok", "Betelhem", "Natnael", "Eden"]
-
-
+ 
+ 
 _mongo_next_retry = 0  # unix timestamp - don't retry a failed Mongo connection on every single request
-
-
+ 
+ 
 def _ensure_mongo():
     """Lazily (re)establish the Mongo connection if it's not up yet, with a
     30s cooldown between attempts. This means a transient DNS/network hiccup
@@ -141,7 +142,7 @@ def _ensure_mongo():
     _mongo_next_retry = time.time() + 30
     try:
         import pymongo
-        client = pymongo.MongoClient(MONGODB_URI, serverSelectionTimeoutMS=8000)
+        client = pymongo.MongoClient(MONGODB_URI, serverSelectionTimeoutMS=4000, connectTimeoutMS=4000)
         try:
             mdb = client.get_default_database()
             if mdb is None:
@@ -155,8 +156,8 @@ def _ensure_mongo():
         print("[data.py] MongoDB connection established.")
     except Exception as e:
         _mongo_last_error = str(e)
-
-
+ 
+ 
 def load():
     with _lock:
         _ensure_mongo()
@@ -206,8 +207,8 @@ def load():
                 return d
             except Exception:
                 return _default()
-
-
+ 
+ 
 def save(data):
     with _lock:
         _ensure_mongo()
@@ -226,15 +227,15 @@ def save(data):
         with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
         os.replace(tmp, DATA_FILE)
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
 def get_settings():
     return load()["settings"]
-
-
+ 
+ 
 def update_settings(patch):
     with _lock:
         d = load()
@@ -243,8 +244,8 @@ def update_settings(patch):
                 d["settings"][k] = v
         save(d)
         return d["settings"]
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Players
 # ---------------------------------------------------------------------------
@@ -293,13 +294,13 @@ def get_or_create_player(user_id, name):
             if changed:
                 save(d)
         return d["players"][uid]
-
-
+ 
+ 
 def get_player(user_id):
     d = load()
     return d["players"].get(str(user_id))
-
-
+ 
+ 
 def set_player_prefs(user_id, **prefs):
     uid = str(user_id)
     with _lock:
@@ -311,8 +312,8 @@ def set_player_prefs(user_id, **prefs):
                 d["players"][uid][k] = prefs[k]
         save(d)
         return d["players"][uid]
-
-
+ 
+ 
 def credit_balance(user_id, amount, note="deposit"):
     uid = str(user_id)
     with _lock:
@@ -326,8 +327,8 @@ def credit_balance(user_id, amount, note="deposit"):
         })
         save(d)
         return True
-
-
+ 
+ 
 def debit_balance(user_id, amount, note="bet"):
     """Debits balance. Bonus balance is spent first (FIFO), so real cash stays
     protected the longest, then falls back to real balance."""
@@ -348,16 +349,16 @@ def debit_balance(user_id, amount, note="bet"):
         })
         save(d)
         return True
-
-
+ 
+ 
 def withdrawable_amount(user_id):
     """Real-cash balance only - bonus money can never be withdrawn."""
     p = get_player(user_id)
     if not p:
         return 0
     return max(0, p["balance"] - p.get("bonus_balance", 0))
-
-
+ 
+ 
 def ban_player(user_id, reason="Violation of terms"):
     uid = str(user_id)
     with _lock:
@@ -366,8 +367,8 @@ def ban_player(user_id, reason="Violation of terms"):
             d["players"][uid]["banned"] = True
         d["banned"][uid] = reason
         save(d)
-
-
+ 
+ 
 def unban_player(user_id):
     uid = str(user_id)
     with _lock:
@@ -376,13 +377,13 @@ def unban_player(user_id):
             d["players"][uid]["banned"] = False
         d["banned"].pop(uid, None)
         save(d)
-
-
+ 
+ 
 def is_banned(user_id):
     d = load()
     return d["players"].get(str(user_id), {}).get("banned", False)
-
-
+ 
+ 
 def adjust_balance_admin(user_id, amount, note="Admin adjustment"):
     """Admin can add or remove funds directly (amount can be negative)."""
     uid = str(user_id)
@@ -397,8 +398,8 @@ def adjust_balance_admin(user_id, amount, note="Admin adjustment"):
         })
         save(d)
         return True
-
-
+ 
+ 
 def list_players(search=None, limit=200):
     d = load()
     items = list(d["players"].items())
@@ -407,8 +408,8 @@ def list_players(search=None, limit=200):
         items = [(uid, p) for uid, p in items if s in uid.lower() or s in p.get("name", "").lower()]
     items.sort(key=lambda x: x[1].get("created_at", ""), reverse=True)
     return [{"user_id": uid, **p} for uid, p in items[:limit]]
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Deposits / withdrawals (manual only - this is the ONLY way to add funds
 # besides the one-time signup bonus)
@@ -429,8 +430,8 @@ def add_deposit_request(user_id, name, amount, method, reference):
         d["deposit_requests"].append(req)
         save(d)
     return req
-
-
+ 
+ 
 def add_withdraw_request(user_id, name, amount, method, account):
     req = {
         "id": str(uuid.uuid4())[:8],
@@ -447,28 +448,28 @@ def add_withdraw_request(user_id, name, amount, method, account):
         d["withdraw_requests"].append(req)
         save(d)
     return req
-
-
+ 
+ 
 def get_pending_deposits():
     d = load()
     return [r for r in d["deposit_requests"] if r["status"] == "pending"]
-
-
+ 
+ 
 def get_pending_withdrawals():
     d = load()
     return [r for r in d["withdraw_requests"] if r["status"] == "pending"]
-
-
+ 
+ 
 def get_all_deposits(limit=200):
     d = load()
     return list(reversed(d["deposit_requests"]))[:limit]
-
-
+ 
+ 
 def get_all_withdrawals(limit=200):
     d = load()
     return list(reversed(d["withdraw_requests"]))[:limit]
-
-
+ 
+ 
 def deposits_total(date_from=None, date_to=None, status="approved"):
     d = load()
     rows = d["deposit_requests"]
@@ -479,8 +480,8 @@ def deposits_total(date_from=None, date_to=None, status="approved"):
     if date_to:
         rows = [r for r in rows if r["time"][:10] <= date_to]
     return sum(r["amount"] for r in rows)
-
-
+ 
+ 
 def withdrawals_total(date_from=None, date_to=None, status="approved"):
     d = load()
     rows = d["withdraw_requests"]
@@ -491,8 +492,8 @@ def withdrawals_total(date_from=None, date_to=None, status="approved"):
     if date_to:
         rows = [r for r in rows if r["time"][:10] <= date_to]
     return sum(r["amount"] for r in rows)
-
-
+ 
+ 
 def approve_deposit(req_id):
     with _lock:
         d = load()
@@ -503,8 +504,8 @@ def approve_deposit(req_id):
                 credit_balance(r["user_id"], r["amount"], f"Deposit approved ({r['method']})")
                 return r
     return None
-
-
+ 
+ 
 def reject_deposit(req_id):
     with _lock:
         d = load()
@@ -514,8 +515,8 @@ def reject_deposit(req_id):
                 save(d)
                 return r
     return None
-
-
+ 
+ 
 def approve_withdrawal(req_id):
     with _lock:
         d = load()
@@ -525,8 +526,8 @@ def approve_withdrawal(req_id):
                 save(d)
                 return r
     return None
-
-
+ 
+ 
 def reject_withdrawal(req_id):
     """Rejecting refunds the already-debited amount back to the player."""
     with _lock:
@@ -538,8 +539,8 @@ def reject_withdrawal(req_id):
                 credit_balance(r["user_id"], r["amount"], "Withdrawal rejected - refunded")
                 return r
     return None
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Leaderboard / jackpot
 # ---------------------------------------------------------------------------
@@ -549,7 +550,7 @@ def get_leaderboard(period="all"):
     window (based on each win's own timestamp), not lifetime totals."""
     d = load()
     now = datetime.now()
-
+ 
     def in_period(time_str):
         if period == "all":
             return True
@@ -564,7 +565,7 @@ def get_leaderboard(period="all"):
         if period == "monthly":
             return wt.year == now.year and wt.month == now.month
         return True
-
+ 
     players = []
     for uid, p in d["players"].items():
         if period == "all":
@@ -580,13 +581,13 @@ def get_leaderboard(period="all"):
             continue
         players.append({"name": p["name"], "total_wins": total_wins, "total_winnings": total_winnings})
     return sorted(players, key=lambda x: x["total_winnings"], reverse=True)[:20]
-
-
+ 
+ 
 def get_jackpot(bet):
     d = load()
     return d["jackpots"].get(str(bet), 0)
-
-
+ 
+ 
 def add_to_jackpot(bet, amount):
     with _lock:
         d = load()
@@ -594,16 +595,16 @@ def add_to_jackpot(bet, amount):
         d["jackpots"][key] = d["jackpots"].get(key, 0) + amount
         save(d)
         return d["jackpots"][key]
-
-
+ 
+ 
 def reset_jackpot(bet):
     with _lock:
         d = load()
         d["jackpots"][str(bet)] = 0
         d.setdefault("jackpot_armed", {})[str(bet)] = False
         save(d)
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Jackpot payout rule: once a lobby's jackpot reaches its target, it becomes
 # "armed" - the VERY NEXT bingo winner in that lobby wins the jackpot ON TOP
@@ -615,13 +616,13 @@ def set_jackpot_armed(bet, armed=True):
         d = load()
         d.setdefault("jackpot_armed", {})[str(bet)] = armed
         save(d)
-
-
+ 
+ 
 def is_jackpot_armed(bet):
     d = load()
     return d.get("jackpot_armed", {}).get(str(bet), False)
-
-
+ 
+ 
 def pay_out_jackpot(bet):
     """Called exactly once, when the next winner after arming is paid.
     Returns the jackpot amount paid out and resets the pool + armed flag."""
@@ -633,8 +634,8 @@ def pay_out_jackpot(bet):
         d.setdefault("jackpot_armed", {})[key] = False
         save(d)
         return amount
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Commission ledger (for admin revenue reporting)
 # ---------------------------------------------------------------------------
@@ -648,8 +649,8 @@ def record_commission(game_id, bet, player_count, total_pot, commission_amount, 
             "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
         })
         save(d)
-
-
+ 
+ 
 def commission_summary(date_from=None, date_to=None):
     """With no args: today + all-time totals (original behavior, used by the
     dashboard). With date_from/date_to ('YYYY-MM-DD'): commission earned in
@@ -675,8 +676,8 @@ def commission_summary(date_from=None, date_to=None):
         result["range_games"] = len(rows)
         result["range_rows"] = list(reversed(rows))
     return result
-
-
+ 
+ 
 def _period_bounds(period, date_str):
     """period: 'daily'|'weekly'|'monthly'. date_str: 'YYYY-MM-DD' anchor date
     (defaults to today). Returns (date_from, date_to) inclusive, both
@@ -698,8 +699,8 @@ def _period_bounds(period, date_str):
     else:
         d0 = d1 = anchor
     return d0.strftime("%Y-%m-%d"), d1.strftime("%Y-%m-%d")
-
-
+ 
+ 
 def finance_report(period="daily", date_str=None):
     """The Finance Report page: profit + deposits + withdrawals + house
     profit, all scoped to the chosen day/week/month via `date_str` (any
@@ -721,8 +722,8 @@ def finance_report(period="daily", date_str=None):
         "withdrawal_history": [r for r in get_all_withdrawals(limit=100000)
                                 if date_from <= r["time"][:10] <= date_to],
     }
-
-
+ 
+ 
 def player_totals(user_id, date_from=None, date_to=None):
     """Total deposits/withdrawals for one player - overall or date-scoped,
     for the admin Player detail view."""
@@ -742,8 +743,8 @@ def player_totals(user_id, date_from=None, date_to=None):
         "deposit_count": len(dep_rows),
         "withdrawal_count": len(wit_rows),
     }
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Lobby-filler bots (fairness note: bots never receive prize money and never
 # cost a real player anything - they only exist to help a quiet lobby reach
@@ -756,8 +757,8 @@ def get_bot_settings():
         counts.setdefault(str(c["bet"]), 0)
     return {"enabled": d["settings"].get("bots_enabled", True), "counts": counts,
             "names": get_bot_names()}
-
-
+ 
+ 
 def update_bot_settings(enabled=None, counts=None):
     with _lock:
         d = load()
@@ -772,14 +773,14 @@ def update_bot_settings(enabled=None, counts=None):
                     continue
         save(d)
     return get_bot_settings()
-
-
+ 
+ 
 def get_bot_names():
     d = load()
     names = d.get("bot_names")
     return names if names else list(DEFAULT_BOT_NAMES)
-
-
+ 
+ 
 def update_bot_names(names):
     """Admin-editable display names only - NOT win probability. See README."""
     with _lock:
@@ -788,8 +789,8 @@ def update_bot_names(names):
         d["bot_names"] = cleaned if cleaned else list(DEFAULT_BOT_NAMES)
         save(d)
         return d["bot_names"]
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Anti-cheat: flag likely multi-accounting / suspicious behaviour
 # ---------------------------------------------------------------------------
@@ -801,7 +802,7 @@ def register_device(user_id, device_id, ip):
         if uid in d["players"]:
             d["players"][uid]["device_id"] = device_id
             d["players"][uid]["last_ip"] = ip
-
+ 
         new_flags = []
         if device_id:
             users = ac["device_map"].setdefault(device_id, [])
@@ -825,20 +826,20 @@ def register_device(user_id, device_id, ip):
             ac["flags"].append(f)
         save(d)
         return new_flags
-
-
+ 
+ 
 def get_anticheat_flags(limit=100):
     d = load()
     return list(reversed(d["anticheat"]["flags"]))[:limit]
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Online presence - "last seen" heartbeat, updated on normal API traffic.
 # Powers "online now" (admin) and "active today" (dashboard stat).
 # ---------------------------------------------------------------------------
 ONLINE_WINDOW_SECONDS = 90  # no heartbeat in this long => considered offline
-
-
+ 
+ 
 def touch_online(user_id):
     uid = str(user_id)
     with _lock:
@@ -847,8 +848,8 @@ def touch_online(user_id):
             return
         d.setdefault("last_seen", {})[uid] = time.time()
         save(d)
-
-
+ 
+ 
 def get_online_users():
     d = load()
     now = time.time()
@@ -858,8 +859,8 @@ def get_online_users():
             out.append({"user_id": uid, "name": d["players"][uid]["name"],
                         "seconds_ago": int(now - ts)})
     return sorted(out, key=lambda x: x["seconds_ago"])
-
-
+ 
+ 
 def active_users_today():
     d = load()
     today = datetime.now().strftime("%Y-%m-%d")
@@ -879,8 +880,8 @@ def active_users_today():
         if seen_today:
             count += 1
     return count
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Game history (separate from live engine.GameRoom objects - survives
 # restarts, browsable/searchable in admin, never touches live games)
@@ -901,8 +902,8 @@ def record_game_history(game_id, bet, real_player_count, bot_count, total_pot,
             "started_at": started_at, "finished_at": finished_at,
         })
         save(d)
-
-
+ 
+ 
 def get_game_history(date_from=None, date_to=None, bet=None, search=None, limit=200):
     """date_from/date_to: 'YYYY-MM-DD' strings, inclusive. search: matches
     game_id or any winner's name (case-insensitive)."""
@@ -919,8 +920,8 @@ def get_game_history(date_from=None, date_to=None, bet=None, search=None, limit=
         rows = [r for r in rows if s in r["game_id"].lower()
                 or any(s in (w.get("name") or "").lower() for w in r.get("winners", []))]
     return rows[:limit]
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Admin action audit log - who did what, when, from where.
 # ---------------------------------------------------------------------------
@@ -932,13 +933,13 @@ def log_admin_action(admin_name, action, detail="", ip=""):
             "ip": ip or "", "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         })
         save(d)
-
-
+ 
+ 
 def get_admin_audit_log(limit=300):
     d = load()
     return list(reversed(d.get("admin_audit_log", [])))[:limit]
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Admin auth (simple token session, password comes from env ADMIN_PASSWORD)
 # ---------------------------------------------------------------------------
@@ -953,8 +954,8 @@ def create_admin_session(admin_name="Admin", ttl_seconds=8 * 3600):
         d["admin_sessions"][token] = {"expires": now + ttl_seconds, "name": admin_name or "Admin"}
         save(d)
     return token
-
-
+ 
+ 
 def check_admin_session(token):
     if not token:
         return False
@@ -965,23 +966,23 @@ def check_admin_session(token):
     if isinstance(s, dict):
         return bool(s.get("expires", 0) > time.time())
     return bool(s > time.time())  # backward compat with old plain-expiry sessions
-
-
+ 
+ 
 def get_admin_name(token):
     d = load()
     s = d["admin_sessions"].get(token)
     if isinstance(s, dict):
         return s.get("name", "Admin")
     return "Admin"
-
-
+ 
+ 
 def revoke_admin_session(token):
     with _lock:
         d = load()
         d["admin_sessions"].pop(token, None)
         save(d)
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Broadcasts (admin -> all players, sent via Telegram)
 # ---------------------------------------------------------------------------
@@ -990,8 +991,8 @@ def log_broadcast(message):
         d = load()
         d["broadcasts"].append({"message": message, "time": datetime.now().strftime("%Y-%m-%d %H:%M")})
         save(d)
-
-
+ 
+ 
 def dashboard_stats():
     d = load()
     players = d["players"]
@@ -1016,3 +1017,4 @@ def dashboard_stats():
         "anticheat_flags": len(d["anticheat"]["flags"]),
         "banned_players": len(d["banned"]),
     }
+ 
