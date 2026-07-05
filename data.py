@@ -158,8 +158,14 @@ def _ensure_mongo():
 
 
 def load():
+    _ensure_mongo()  # deliberately OUTSIDE the lock - a retry attempt can take
+                      # up to 4s; if it held _lock, it would block EVERY other
+                      # request in the whole app for that long, since almost
+                      # every route calls load()/save(). This was the real
+                      # cause of "login hangs" / "system health shows nothing"
+                      # - not a code crash, but the whole app queuing up
+                      # behind one slow Mongo retry.
     with _lock:
-        _ensure_mongo()
         if _mongo_collection is not None:
             try:
                 doc = _mongo_collection.find_one({"_id": _MONGO_DOC_ID})
@@ -209,8 +215,8 @@ def load():
 
 
 def save(data):
+    _ensure_mongo()  # see load() - kept outside the lock deliberately
     with _lock:
-        _ensure_mongo()
         if _mongo_collection is not None:
             try:
                 doc = dict(data)
