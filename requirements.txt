@@ -1,7 +1,0 @@
-python-telegram-bot==21.6
-flask==3.0.3
-flask-socketio==5.3.6
-python-socketio==5.11.2
-python-engineio==4.9.0
-pymongo==4.8.0
-psutil==6.0.0
